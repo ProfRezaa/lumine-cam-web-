@@ -3,131 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lumina | Top-Bar Interaction</title>
+    <title>Lumina | Fast Load Version</title>
     
     <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/postprocessing/EffectComposer.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/postprocessing/RenderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/postprocessing/ShaderPass.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/postprocessing/UnrealBloomPass.js"></script>
     
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://unpkg.com/@mediapipe/hands/hands.js"></script>
+    <script src="https://unpkg.com/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://unpkg.com/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
     <style>
-        :root {
-            --apple-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-        }
-
-        body, html {
-            margin: 0; padding: 0;
-            width: 100%; height: 100%;
-            overflow: hidden;
-            background-color: #000;
-            font-family: var(--apple-font);
-            color: white;
-        }
-
-        canvas#three-canvas {
-            display: block;
-            position: absolute;
-            top: 0; left: 0;
-            z-index: 1;
-        }
-
-        /* Kamera dipindah ke Atas Tengah */
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; color: white; font-family: -apple-system, sans-serif; }
+        canvas#three-canvas { position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        /* Kamera di Atas Tengah */
         #camera-container {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%) scale(0.8);
-            width: 200px;
-            height: 150px;
-            z-index: 100;
-            border-radius: 20px;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(10px);
-            opacity: 0;
-            transition: all 1s cubic-bezier(0.16, 1, 0.3, 1);
+            position: fixed; top: 15px; left: 50%; transform: translateX(-50%);
+            width: 180px; height: 135px; z-index: 100;
+            border-radius: 15px; overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: #000; opacity: 0; transition: opacity 0.5s;
         }
+        #camera-container.active { opacity: 1; }
+        video#input_video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        canvas#output_canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
 
-        #camera-container.active {
-            opacity: 1;
-            transform: translateX(-50%) scale(1);
-        }
-
-        #input_video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1);
-        }
-
-        #output_canvas {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            transform: scaleX(-1);
-        }
-
-        #ui-layer {
-            position: absolute;
-            inset: 0;
-            z-index: 10;
-            pointer-events: none;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-        }
-
-        #status-text {
-            font-size: clamp(2rem, 10vw, 4.5rem);
-            font-weight: 600;
-            letter-spacing: -0.03em;
-            opacity: 0;
-            transform: scale(0.95);
-            transition: all 0.5s ease;
-            filter: blur(8px);
-        }
-
-        #status-text.active {
-            opacity: 1;
-            transform: scale(1);
-            filter: blur(0);
-        }
-
-        #loading-overlay {
-            position: fixed;
-            inset: 0;
-            background: #000;
-            z-index: 200;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            transition: opacity 1s ease;
-        }
-
-        .loader {
-            width: 40px; height: 40px;
-            border: 2px solid rgba(255,255,255,0.1);
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
+        #ui { position: absolute; inset: 0; z-index: 10; display: flex; justify-content: center; align-items: center; pointer-events: none; }
+        #status-text { font-size: 3rem; font-weight: bold; opacity: 0; transition: 0.3s; text-align: center; }
+        #status-text.show { opacity: 1; transform: scale(1.1); }
+        
+        #loader { position: fixed; inset: 0; background: #000; z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .spin { width: 30px; height: 30px; border: 3px solid #333; border-top-color: #fff; border-radius: 50%; animation: s 1s linear infinite; }
+        @keyframes s { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-    <div id="loading-overlay">
-        <div class="loader"></div>
-        <p style="margin-top: 20px; font-size: 11px; letter-spacing: 2px;">STARTING SYSTEM</p>
+    <div id="loader">
+        <div class="spin"></div>
+        <p>MEMUAT SENSOR (PASTIKAN INTERNET AKTIF)</p>
     </div>
 
     <canvas id="three-canvas"></canvas>
@@ -137,9 +53,8 @@
         <canvas id="output_canvas"></canvas>
     </div>
 
-    <div id="ui-layer">
+    <div id="ui">
         <h1 id="status-text"></h1>
-        <p style="position:absolute; bottom:40px; opacity:0.3; font-size:12px; letter-spacing:3px;">PRESENTED BY GEMINI</p>
     </div>
 
     <script>
@@ -147,144 +62,86 @@
         const canvasElement = document.getElementById('output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
         const statusText = document.getElementById('status-text');
-        const loadingOverlay = document.getElementById('loading-overlay');
-        const camBox = document.getElementById('camera-container');
 
-        // --- THREE.JS ENGINE ---
+        // --- 1. THREE.JS (Scene & Particles) ---
         const scene = new THREE.Scene();
         const camera3d = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), antialias: true, alpha: true });
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-
+        
         const composer = new THREE.EffectComposer(renderer);
         composer.addPass(new THREE.RenderPass(scene, camera3d));
-        const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.4, 0.85);
-        composer.addPass(bloom);
+        composer.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.4, 0.85));
 
-        // Ambient Particles
-        const count = 3000;
         const geo = new THREE.BufferGeometry();
-        const posArr = new Float32Array(count * 3);
-        for(let i=0; i<count*3; i++) posArr[i] = (Math.random()-0.5)*20;
+        const pCount = 1000;
+        const posArr = new Float32Array(pCount * 3);
+        for(let i=0; i<pCount*3; i++) posArr[i] = (Math.random()-0.5)*15;
         geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-        const mat = new THREE.PointsMaterial({ size: 0.03, color: 0x4488ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending });
+        const mat = new THREE.PointsMaterial({ size: 0.05, color: 0x00aaff, transparent: true, blending: THREE.AdditiveBlending });
         const points = new THREE.Points(geo, mat);
         scene.add(points);
+        camera3d.position.z = 5;
 
-        camera3d.position.z = 6;
-
-        // --- GESTURES ---
-        let currentMsg = "";
+        // --- 2. GESTURE DETECTION ---
         let handPos = { x: 0, y: 0, active: false };
-
-        function setStatus(txt) {
-            if(currentMsg === txt) return;
-            currentMsg = txt;
-            statusText.classList.remove('active');
-            if(txt) {
-                setTimeout(() => {
-                    statusText.innerText = txt;
-                    statusText.classList.add('active');
-                }, 100);
-            }
-        }
-
-        function triggerBoom(x, y) {
-            const fCount = 60;
-            const fGeo = new THREE.BufferGeometry();
-            const fPos = new Float32Array(fCount * 3);
-            const vels = [];
-            for(let i=0; i<fCount; i++) {
-                fPos[i*3]=x; fPos[i*3+1]=y; fPos[i*3+2]=0;
-                vels.push(new THREE.Vector3((Math.random()-0.5)*0.3, (Math.random()-0.5)*0.3, (Math.random()-0.5)*0.3));
-            }
-            fGeo.setAttribute('position', new THREE.BufferAttribute(fPos, 3));
-            const fMat = new THREE.PointsMaterial({ size: 0.07, color: 0xffaa00, transparent: true, blending: THREE.AdditiveBlending });
-            const fSystem = new THREE.Points(fGeo, fMat);
-            scene.add(fSystem);
-
-            let opacity = 1.0;
-            function run() {
-                opacity -= 0.025;
-                if(opacity <= 0) { scene.remove(fSystem); return; }
-                fMat.opacity = opacity;
-                const p = fGeo.attributes.position.array;
-                for(let i=0; i<fCount; i++) {
-                    p[i*3]+=vels[i].x; p[i*3+1]+=vels[i].y; p[i*3+2]+=vels[i].z;
-                }
-                fGeo.attributes.position.needsUpdate = true;
-                requestAnimationFrame(run);
-            }
-            run();
+        function showMsg(txt) {
+            if(statusText.innerText === txt) return;
+            statusText.innerText = txt;
+            statusText.className = txt ? 'show' : '';
         }
 
         function onResults(results) {
-            if (loadingOverlay.style.opacity !== "0") {
-                loadingOverlay.style.opacity = "0";
-                camBox.classList.add('active');
-                setTimeout(() => loadingOverlay.style.display = "none", 1000);
-            }
-
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('camera-container').classList.add('active');
             
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                handPos.active = true;
                 const hand = results.multiHandLandmarks[0];
-                drawConnectors(canvasCtx, hand, HAND_CONNECTIONS, {color: '#ffffff', lineWidth: 1});
+                drawConnectors(canvasCtx, hand, HAND_CONNECTIONS, {color: '#00ff00', lineWidth: 2});
                 
-                handPos.x = (hand[9].x - 0.5) * -14;
-                handPos.y = (hand[9].y - 0.5) * -12;
+                handPos.active = true;
+                handPos.x = (hand[9].x - 0.5) * -10;
+                handPos.y = (hand[9].y - 0.5) * -8;
 
-                const isUp = (i) => hand[i].y < hand[i-2].y;
-                const count = [isUp(8), isUp(12), isUp(16), isUp(20)].filter(Boolean).length;
+                const up = (i) => hand[i].y < hand[i-2].y;
+                const count = [up(8), up(12), up(16), up(20)].filter(Boolean).length;
 
-                // Gestures
-                if(count >= 4) {
-                    if(currentMsg !== "BOOM") { triggerBoom(handPos.x, handPos.y); setStatus("BOOM!"); setTimeout(()=>setStatus(""), 1000); }
-                } else if(count === 2) {
-                    setStatus("apa kabar");
-                } else if(count === 1) {
-                    setStatus("halo sayang");
-                } else if(hand[4].x > hand[3].x && isUp(8) && isUp(20) && !isUp(12)) {
-                    setStatus("i love you");
-                }
+                if(count >= 4) showMsg("BOOM FIREWORK!");
+                else if(count === 2) showMsg("Apa Kabar?");
+                else if(count === 1) showMsg("Halo Sayang");
+                else showMsg("");
             } else {
                 handPos.active = false;
-                setStatus("");
+                showMsg("");
             }
         }
 
-        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        // --- 3. START SENSORS ---
+        const hands = new Hands({ locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5 });
         hands.onResults(onResults);
 
         new Camera(videoElement, {
             onFrame: async () => await hands.send({image: videoElement}),
-            width: 640, height: 480
+            width: 480, height: 360
         }).start();
 
-        function render() {
-            requestAnimationFrame(render);
+        function animate() {
+            requestAnimationFrame(animate);
             const p = points.geometry.attributes.position.array;
-            for(let i=0; i<count; i++) {
+            for(let i=0; i<pCount; i++) {
                 if(handPos.active) {
-                    p[i*3] += (handPos.x - p[i*3]) * 0.03 * Math.random();
-                    p[i*3+1] += (handPos.y - p[i*3+1]) * 0.03 * Math.random();
+                    p[i*3] += (handPos.x - p[i*3]) * 0.05;
+                    p[i*3+1] += (handPos.y - p[i*3+1]) * 0.05;
                 } else {
-                    p[i*3] += Math.sin(Date.now()*0.001 + i)*0.005;
-                    p[i*3+1] += Math.cos(Date.now()*0.001 + i)*0.005;
+                    p[i*3] += Math.sin(Date.now()*0.001 + i)*0.01;
                 }
             }
             points.geometry.attributes.position.needsUpdate = true;
             composer.render();
         }
-        render();
-
-        window.addEventListener('resize', () => {
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            camera3d.aspect = window.innerWidth / window.innerHeight;
-            camera3d.updateProjectionMatrix();
-        });
+        animate();
     </script>
 </body>
 </html>
