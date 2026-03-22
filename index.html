@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Gesture Experience</title>
+<title>Lumine Gesture Experience</title>
 
 <style>
 html, body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 50%, #0a0a0f, #000);
+  background: radial-gradient(circle at 50% 50%, #0a0a12, #000);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: white;
 }
@@ -27,6 +27,7 @@ canvas { display: block; }
   text-align: center;
   transition: all 0.8s cubic-bezier(.22,1,.36,1);
   pointer-events: none;
+  text-shadow: 0 0 20px rgba(255,255,255,0.4);
 }
 
 #overlay.show {
@@ -52,32 +53,51 @@ canvas { display: block; }
   justify-content:center;
   background:#000;
   z-index:10;
+  flex-direction: column;
+  gap: 10px;
   transition: opacity 1s ease;
+}
+
+#loading small {
+  opacity: 0.6;
 }
 </style>
 </head>
 
 <body>
 
-<div id="loading">Loading experience...</div>
+<div id="loading">
+  <div>Initializing experience...</div>
+  <small id="loadingSub">Preparing camera & AI...</small>
+</div>
+
 <div id="overlay"></div>
 <div id="instruction">Show your hand gesture</div>
+
 <video id="video" autoplay playsinline style="display:none;"></video>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/postprocessing/EffectComposer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/postprocessing/RenderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<!-- THREE -->
+<script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.152.2/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://unpkg.com/three@0.152.2/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://unpkg.com/three@0.152.2/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<!-- MEDIAPIPE (STABLE CDN) -->
+<script src="https://unpkg.com/@mediapipe/hands/hands.js"></script>
+<script src="https://unpkg.com/@mediapipe/camera_utils/camera_utils.js"></script>
 
 <script>
 let scene, camera, renderer, composer;
 let particles, particlePositions;
-let handData = null;
-let fireworks = [];
+let handLandmarks = null;
 let overlay = document.getElementById("overlay");
+let loading = document.getElementById("loading");
+let loadingSub = document.getElementById("loadingSub");
+
+let lastGesture = "";
+let lastGestureTime = 0;
+
+let fireworks = [];
 
 initThree();
 initHandTracking();
@@ -85,42 +105,45 @@ initHandTracking();
 function initThree(){
   scene = new THREE.Scene();
 
-  camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+  camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
   camera.position.z = 5;
 
   renderer = new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   document.body.appendChild(renderer.domElement);
 
   composer = new THREE.EffectComposer(renderer);
   composer.addPass(new THREE.RenderPass(scene, camera));
-  composer.addPass(new THREE.UnrealBloomPass(
+
+  const bloom = new THREE.UnrealBloomPass(
     new THREE.Vector2(innerWidth, innerHeight),
-    1.5, 0.4, 0.85
-  ));
+    1.2, 0.4, 0.9
+  );
+  composer.addPass(bloom);
 
   createParticles();
   animate();
 }
 
 function createParticles(){
-  const count = 500;
+  const count = 350;
   const geo = new THREE.BufferGeometry();
   particlePositions = new Float32Array(count * 3);
 
   for(let i=0;i<count;i++){
-    particlePositions[i*3] = (Math.random()-0.5)*5;
-    particlePositions[i*3+1] = (Math.random()-0.5)*5;
-    particlePositions[i*3+2] = (Math.random()-0.5)*5;
+    particlePositions[i*3] = (Math.random()-0.5)*6;
+    particlePositions[i*3+1] = (Math.random()-0.5)*6;
+    particlePositions[i*3+2] = (Math.random()-0.5)*6;
   }
 
   geo.setAttribute('position', new THREE.BufferAttribute(particlePositions,3));
 
   const mat = new THREE.PointsMaterial({
-    size: 0.05,
+    size: 0.06,
     color: 0xffffff,
-    blending: THREE.AdditiveBlending,
-    transparent:true
+    transparent:true,
+    blending: THREE.AdditiveBlending
   });
 
   particles = new THREE.Points(geo, mat);
@@ -133,57 +156,66 @@ function animate(){
   updateParticles();
   updateFireworks();
 
+  camera.position.x += (0 - camera.position.x) * 0.02;
+  camera.position.y += (0 - camera.position.y) * 0.02;
+
   composer.render();
 }
 
 function updateParticles(){
-  if(handData){
-    const palm = handData[0];
-    for(let i=0;i<particlePositions.length;i+=3){
-      particlePositions[i] += (palm.x*5 - particlePositions[i]) * 0.05;
-      particlePositions[i+1] += (-palm.y*5 - particlePositions[i+1]) * 0.05;
-    }
-    particles.geometry.attributes.position.needsUpdate = true;
+  if(!handLandmarks) return;
+
+  const palm = handLandmarks[0];
+
+  for(let i=0;i<particlePositions.length;i+=3){
+    particlePositions[i] += ((palm.x-0.5)*8 - particlePositions[i]) * 0.08;
+    particlePositions[i+1] += ((-palm.y+0.5)*6 - particlePositions[i+1]) * 0.08;
   }
+
+  particles.geometry.attributes.position.needsUpdate = true;
 }
 
 function createFirework(){
   const group = new THREE.Group();
-  const particles = [];
 
-  for(let i=0;i<200;i++){
-    const geo = new THREE.SphereGeometry(0.02);
+  for(let i=0;i<150;i++){
+    const geo = new THREE.SphereGeometry(0.03);
     const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color().setHSL(Math.random(),1,0.6)
+      color: new THREE.Color().setHSL(Math.random(),1,0.6),
+      transparent:true
     });
+
     const mesh = new THREE.Mesh(geo, mat);
 
     mesh.velocity = new THREE.Vector3(
-      (Math.random()-0.5)*0.2,
-      (Math.random()-0.5)*0.2,
-      (Math.random()-0.5)*0.2
+      (Math.random()-0.5)*0.4,
+      (Math.random()-0.5)*0.4,
+      (Math.random()-0.5)*0.4
     );
 
     group.add(mesh);
-    particles.push(mesh);
   }
 
   scene.add(group);
-  fireworks.push({group, particles, life:1});
+  fireworks.push({group, life:1});
 }
 
 function updateFireworks(){
   fireworks.forEach(fw=>{
-    fw.life -= 0.01;
-    fw.particles.forEach(p=>{
+    fw.life -= 0.015;
+
+    fw.group.children.forEach(p=>{
       p.position.add(p.velocity);
-      p.velocity.y -= 0.002;
+      p.velocity.y -= 0.004;
       p.material.opacity = fw.life;
     });
+
+    camera.position.x += (Math.random()-0.5)*0.01;
+    camera.position.y += (Math.random()-0.5)*0.01;
   });
 
   fireworks = fireworks.filter(fw=>{
-    if(fw.life <=0){
+    if(fw.life <= 0){
       scene.remove(fw.group);
       return false;
     }
@@ -197,65 +229,89 @@ function showText(text){
   setTimeout(()=>overlay.classList.remove("show"),2000);
 }
 
-function detectGesture(landmarks){
+function detectGesture(lm){
   let fingers = 0;
 
-  if(landmarks[8].y < landmarks[6].y) fingers++;
-  if(landmarks[12].y < landmarks[10].y) fingers++;
-  if(landmarks[16].y < landmarks[14].y) fingers++;
-  if(landmarks[20].y < landmarks[18].y) fingers++;
+  if(lm[8].y < lm[6].y) fingers++;
+  if(lm[12].y < lm[10].y) fingers++;
+  if(lm[16].y < lm[14].y) fingers++;
+  if(lm[20].y < lm[18].y) fingers++;
 
-  let thumb = landmarks[4].x < landmarks[3].x;
-
+  let thumb = lm[4].x < lm[3].x;
   if(thumb) fingers++;
 
-  if(fingers === 1) showText("halo sayang");
-  if(fingers === 2) showText("apa kabar");
-  if(fingers === 5){
-    showText("🔥");
-    createFirework();
+  let gesture = "";
+
+  if(fingers === 1) gesture = "halo sayang";
+  else if(fingers === 2) gesture = "apa kabar";
+  else if(fingers === 5) gesture = "fire";
+  else if(thumb && lm[8].y < lm[6].y && lm[20].y < lm[18].y){
+    gesture = "i love you";
   }
 
-  if(thumb && landmarks[8].y < landmarks[6].y && landmarks[20].y < landmarks[18].y){
-    showText("i love you");
+  if(gesture && gesture !== lastGesture && Date.now() - lastGestureTime > 1000){
+    lastGesture = gesture;
+    lastGestureTime = Date.now();
+
+    if(gesture === "fire"){
+      showText("🔥");
+      createFirework();
+    } else {
+      showText(gesture);
+    }
   }
 }
 
-function initHandTracking(){
+async function initHandTracking(){
   const video = document.getElementById("video");
 
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" }
+    });
+    video.srcObject = stream;
+  } catch(e){
+    loadingSub.innerText = "Camera access denied";
+    return;
+  }
+
   const hands = new Hands({
-    locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    locateFile: file => `https://unpkg.com/@mediapipe/hands/${file}`
   });
 
   hands.setOptions({
     maxNumHands:1,
     modelComplexity:1,
-    minDetectionConfidence:0.7,
-    minTrackingConfidence:0.7
+    minDetectionConfidence:0.6,
+    minTrackingConfidence:0.6
   });
 
   hands.onResults(results=>{
-    if(results.multiHandLandmarks.length){
-      const lm = results.multiHandLandmarks[0];
-      handData = lm;
-      detectGesture(lm);
+    if(results.multiHandLandmarks && results.multiHandLandmarks.length > 0){
+      handLandmarks = results.multiHandLandmarks[0];
+      detectGesture(handLandmarks);
+
+      if(loading.style.opacity !== "0"){
+        loading.style.opacity = 0;
+      }
     }
   });
 
-  const cam = new Camera(video,{
+  const cameraUtils = new Camera(video,{
     onFrame: async ()=>{
-      await hands.send({image:video});
+      await hands.send({image: video});
     },
-    width:640,
-    height:480
+    width: 640,
+    height: 480
   });
 
-  cam.start();
+  cameraUtils.start();
 
   setTimeout(()=>{
-    document.getElementById("loading").style.opacity = 0;
-  },1500);
+    if(loading.style.opacity !== "0"){
+      loadingSub.innerText = "Still loading... try refresh";
+    }
+  },5000);
 }
 
 window.addEventListener('resize', ()=>{
