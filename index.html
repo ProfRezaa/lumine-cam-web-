@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hologram Hand | Reza Project</title>
+    <title>Hologram Reza | Final Version</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500&display=swap" rel="stylesheet">
     
-    <script src="https://unpkg.com/three@0.152.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
@@ -14,37 +14,11 @@
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; color: white; }
         #canvas-container { position: absolute; inset: 0; z-index: 1; }
         .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; pointer-events: none; }
-        
-        #gesture-text { 
-            font-size: 3rem; 
-            font-weight: 300; 
-            opacity: 0; 
-            transform: translateY(30px); 
-            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); 
-            text-shadow: 0 0 25px rgba(0, 255, 255, 0.7); /* Cyan glow */
-            text-align: center;
-            color: #fff;
-        }
+        #gesture-text { font-size: 3.5rem; font-weight: 300; opacity: 0; transform: translateY(20px); transition: all 0.4s ease; text-shadow: 0 0 20px #0ff; text-align: center; }
         #gesture-text.active { opacity: 1; transform: translateY(0); }
-
-        /* Kamera dipindah ke Atas Tengah, Kecil, & Transparan */
-        video { 
-            display: block; 
-            position: absolute; 
-            top: 20px; 
-            left: 50%;
-            transform: translateX(-50%) scaleX(-1); /* Tengah & Mirror */
-            width: 150px; 
-            border-radius: 12px; 
-            border: 1px solid rgba(255,255,255,0.1);
-            z-index: 100;
-            opacity: 0.3; /* Samar-samar */
-            transition: opacity 0.3s;
-        }
-        video:hover { opacity: 1; } /* Muncul saat di-hover mouse */
-
-        #loading-screen { position: fixed; inset: 0; background: #000; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 1s; }
-        .loader { width: 40px; height: 40px; border: 3px solid rgba(0,255,255,0.1); border-top: 3px solid #0ff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        video { display: block; position: absolute; top: 20px; left: 50%; transform: translateX(-50%) scaleX(-1); width: 160px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); z-index: 100; opacity: 0.5; }
+        #loading-screen { position: fixed; inset: 0; background: #000; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s; }
+        .loader { width: 30px; height: 30px; border: 2px solid #333; border-top: 2px solid #0ff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
     </style>
 </head>
@@ -52,7 +26,7 @@
 
     <div id="loading-screen">
         <div class="loader"></div>
-        <div style="letter-spacing: 0.2em; font-size: 0.8rem; color: #0ff;">MEMPROSES JARINGAN HOLOGRAM...</div>
+        <div style="letter-spacing: 0.2em; font-size: 0.7rem; color: #0ff;">MEMUAT HOLOGRAM REZA...</div>
     </div>
 
     <video id="webcam" playsinline></video>
@@ -60,190 +34,102 @@
     <div class="overlay"><div id="gesture-text"></div></div>
 
     <script>
-        let scene, camera, renderer, handParticles;
-        const NUM_PARTICLES = 1500; // Jumlah partikel per tangan
-        let currentGlowColor = 0x00ffff; // Cyan default
+        let scene, camera, renderer, handPoints;
+        const PARTICLE_COUNT = 1000;
+        let lastText = "";
 
-        function initScene() {
+        // 1. Setup 3D
+        function init() {
             scene = new THREE.Scene();
-            // Camera perspective disesuaikan agar tangan terlihat pas
             camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
-            camera.position.set(0, 0, 4);
+            camera.position.z = 4;
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
-            // Tambahkan additive blending untuk efek cahaya premium
-            renderer.toneMapping = THREE.ReinhardToneMapping;
             document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-            // 1. BUAT PARTIKEL TANGAN (Skeleton)
             const geo = new THREE.BufferGeometry();
-            const positions = new Float32Array(NUM_PARTICLES * 3);
-            for(let i=0; i<NUM_PARTICLES*3; i++) positions[i] = 0; // Mulai dari titik 0
-            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            
-            // Material partikel: Kecil, Bercahaya, Additive Blending
-            const mat = new THREE.PointsMaterial({ 
-                color: currentGlowColor, 
-                size: 0.015, 
-                transparent: true, 
-                opacity: 0.9,
-                blending: THREE.AdditiveBlending, // Membuat partikel tumpuk jadi lebih terang
-                depthWrite: false
-            });
-            handParticles = new THREE.Points(geo, mat);
-            scene.add(handParticles);
+            const pos = new Float32Array(PARTICLE_COUNT * 3);
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            const mat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.02, transparent: true, blending: THREE.AdditiveBlending });
+            handPoints = new THREE.Points(geo, mat);
+            scene.add(handPoints);
+            animate();
         }
 
-        async function setupHands() {
+        // 2. Setup AI Kamera
+        async function startApp() {
             const hands = new Hands({
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
             });
 
-            hands.setOptions({ 
-                maxNumHands: 1, 
-                modelComplexity: 1, 
-                minDetectionConfidence: 0.7, // Ditingkatkan agar bentuk lebih stabil
-                minTrackingConfidence: 0.7 
-            });
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
             hands.onResults(onResults);
 
             const videoElement = document.getElementById('webcam');
-            const cameraHelper = new Camera(videoElement, {
+            const cameraProc = new Camera(videoElement, {
                 onFrame: async () => { await hands.send({image: videoElement}); },
                 width: 640, height: 480
             });
 
-            cameraHelper.start().then(() => {
+            cameraProc.start().then(() => {
                 document.getElementById('loading-screen').style.opacity = '0';
-                setTimeout(() => document.getElementById('loading-screen').remove(), 1000);
+                setTimeout(() => document.getElementById('loading-screen').remove(), 500);
             });
         }
 
-        function onResults(results) {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const lm = results.multiHandLandmarks[0];
-                updateHandParticles(lm);
-                detectGesture(lm);
+        function onResults(res) {
+            const posAttr = handPoints.geometry.attributes.position;
+            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                const lm = res.multiHandLandmarks[0];
+                let idx = 0;
+                
+                // Gambar Kerangka
+                const pairs = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
+                pairs.forEach(p => {
+                    const s = lm[p[0]], e = lm[p[1]];
+                    for(let i=0; i<40; i++) {
+                        const t = i/40;
+                        posAttr.array[idx++] = (0.5 - (s.x + (e.x-s.x)*t)) * 4;
+                        posAttr.array[idx++] = (0.5 - (s.y + (e.y-s.y)*t)) * 3;
+                        posAttr.array[idx++] = -(s.z + (e.z-s.z)*t) * 2;
+                    }
+                });
+                
+                // Deteksi Jari
+                const fUp = [lm[8].y<lm[6].y, lm[12].y<lm[10].y, lm[16].y<lm[14].y, lm[20].y<lm[18].y];
+                const thumb = Math.abs(lm[4].x - lm[2].x) > 0.1;
+                const count = fUp.filter(Boolean).length + (thumb ? 1 : 0);
+
+                if(count === 5) { show("🎆 PETASAN! 🎆", 0xff00ff); }
+                else if(count === 4) { show("senang bertemu denganmu", 0x00ff00); }
+                else if(count === 3) { show("aku reza", 0xffff00); }
+                else if(count === 2) { show("perkenalkan", 0x00ffff); }
+                else if(count === 1) { show("hai", 0xffffff); }
+                else { show(""); }
             } else {
-                hideHand();
-                updateText("");
+                for(let i=0; i<posAttr.array.length; i++) posAttr.array[i] = -100;
+                show("");
             }
+            posAttr.needsUpdate = true;
         }
 
-        // 2. LOGIKA UTAMA: MENGUBAH LANDMARK JADI BENTUK TANGAN PARTIKEL
-        function updateHandParticles(landmarks) {
-            const positions = handParticles.geometry.attributes.position.array;
-            let pIdx = 0;
-
-            // MediaPipe memberikan 21 titik gembok (landmarks)
-            // Kita akan membuat garis partikel di antara titik-titik tersebut
-            
-            // Koneksi Jari (0=pergelangan, 1-4=jempol, 5-8=telunjuk, dst)
-            const connections = [
-                [0, 1], [1, 2], [2, 3], [3, 4], // Jempol
-                [0, 5], [5, 6], [6, 7], [7, 8], // Telunjuk
-                [0, 9], [9, 10], [10, 11], [11, 12], // Tengah
-                [0, 13], [13, 14], [14, 15], [15, 16], // Manis
-                [0, 17], [17, 18], [18, 19], [19, 20], // Kelingking
-                [5, 9], [9, 13], [13, 17] // Telapak
-            ];
-
-            const particlesPerConn = Math.floor(NUM_PARTICLES / connections.length);
-
-            connections.forEach(conn => {
-                const startLM = landmarks[conn[0]];
-                const endLM = landmarks[conn[1]];
-
-                // Konversi koordinat MediaPipe (0-1) ke Three.js (dunia 3D)
-                const start = new THREE.Vector3((0.5 - startLM.x) * 4, (0.5 - startLM.y) * 3, -startLM.z * 2);
-                const end = new THREE.Vector3((0.5 - endLM.x) * 4, (0.5 - endLM.y) * 3, -endLM.z * 2);
-
-                // Buat titik-titik di antara start dan end (interpolasi)
-                for(let i=0; i<particlesPerConn; i++) {
-                    const t = i / particlesPerConn;
-                    positions[pIdx++] = start.x + (end.x - start.x) * t;
-                    positions[pIdx++] = start.y + (end.y - start.y) * t;
-                    positions[pIdx++] = start.z + (end.z - start.z) * t;
-                }
-            });
-
-            // Sisa partikel disembunyikan
-            while(pIdx < NUM_PARTICLES * 3) {
-                positions[pIdx++] = -100; // Lempar jauh dari layar
-            }
-
-            handParticles.geometry.attributes.position.needsUpdate = true;
-            handParticles.visible = true;
-        }
-
-        function hideHand() {
-            if(handParticles) handParticles.visible = false;
-        }
-
-        function detectGesture(lm) {
-            const isFingerUp = [
-                lm[8].y < lm[6].y,  
-                lm[12].y < lm[10].y, 
-                lm[16].y < lm[14].y, 
-                lm[20].y < lm[18].y  
-            ];
-            const thumbUp = Math.abs(lm[4].x - lm[2].x) > 0.1;
-            const count = isFingerUp.filter(Boolean).length + (thumbUp ? 1 : 0);
-
-            if (count === 5) {
-                updateText("🎆 HOLOGRAPHIC FIREWORKS! 🎆");
-                changeHandColor(0xff00ff); // Magenta saat petasan
-            } else if (count === 4) {
-                updateText("senang bertemu denganmu");
-                changeHandColor(0x00ff00); // Hijau
-            } else if (count === 3) {
-                updateText("aku reza");
-                changeHandColor(0xffff00); // Kuning
-            } else if (count === 2) {
-                updateText("perkenalkan");
-                changeHandColor(0x00ffff); // Cyan (Default)
-            } else if (count === 1) {
-                updateText("hai");
-                changeHandColor(0xffffff); // Putih
-            } else {
-                updateText("");
-                changeHandColor(0x00ffff); // Kembali ke Cyan
-            }
-        }
-
-        function updateText(txt) {
+        function show(t, c) {
             const el = document.getElementById('gesture-text');
-            if(lastGesture !== txt) {
-                lastGesture = txt;
-                el.innerText = txt;
-                txt === "" ? el.classList.remove('active') : el.classList.add('active');
-            }
-        }
-
-        function changeHandColor(colorHex) {
-            if(handParticles.material.color.getHex() !== colorHex) {
-                handParticles.material.color.setHex(colorHex);
-                // Ubah glow text juga agar serasi
-                const rgb = new THREE.Color(colorHex);
-                document.getElementById('gesture-text').style.textShadow = `0 0 25px rgba(${rgb.r*255}, ${rgb.g*255}, ${rgb.b*255}, 0.7)`;
+            if(lastText !== t) {
+                lastText = t; el.innerText = t;
+                t === "" ? el.classList.remove('active') : el.classList.add('active');
+                if(c) { handPoints.material.color.setHex(c); el.style.textShadow = `0 0 20px ${new THREE.Color(c).getStyle()}`; }
             }
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            // Tambahkan rotasi sedikit agar terlihat 3D
-            if(handParticles && handParticles.visible) {
-                // handParticles.rotation.y += 0.001; // Opsional: rotasi lambat
-            }
             renderer.render(scene, camera);
         }
 
-        initScene();
-        setupHands();
-        animate();
-
+        init();
+        startApp();
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
