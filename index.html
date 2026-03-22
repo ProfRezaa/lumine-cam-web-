@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lumina | Pro Experience</title>
+    <title>Lumina | Project Reza</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500&display=swap" rel="stylesheet">
     
     <script src="https://unpkg.com/three@0.152.0/build/three.min.js"></script>
@@ -14,41 +14,54 @@
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; color: white; }
         #canvas-container { position: absolute; inset: 0; z-index: 1; }
         .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; pointer-events: none; }
-        #gesture-text { font-size: 4rem; font-weight: 300; opacity: 0; transform: scale(0.8); transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); text-shadow: 0 0 30px rgba(255,255,255,0.5); }
-        #gesture-text.active { opacity: 1; transform: scale(1); }
-        #loading-screen { position: fixed; inset: 0; background: #000; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 1s; }
+        
+        #gesture-text { 
+            font-size: 3.5rem; 
+            font-weight: 300; 
+            opacity: 0; 
+            transform: translateY(30px); 
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); 
+            text-shadow: 0 0 25px rgba(255,255,255,0.7);
+            text-align: center;
+        }
+        #gesture-text.active { opacity: 1; transform: translateY(0); }
+
+        /* Kamera dipindah ke ATAS TENGAH */
+        video { 
+            display: block; 
+            position: absolute; 
+            top: 20px; 
+            left: 50%;
+            transform: translateX(-50%) scaleX(-1); /* Tengah & Mirror */
+            width: 200px; 
+            border-radius: 15px; 
+            border: 2px solid rgba(255,255,255,0.2);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            z-index: 100;
+        }
+
+        #loading-screen { position: fixed; inset: 0; background: #000; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 1s; }
         .loader { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #fff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
-       video { 
-    display: block; 
-    position: absolute; 
-    bottom: 20px; 
-    right: 20px; 
-    width: 200px; 
-    border-radius: 10px; 
-    border: 2px solid white;
-    z-index: 100;
-}
     </style>
 </head>
 <body>
 
     <div id="loading-screen">
         <div class="loader"></div>
-        <div style="letter-spacing: 0.2em; font-size: 0.8rem;">MENGHUBUNGKAN KAMERA...</div>
+        <div style="letter-spacing: 0.2em; font-size: 0.8rem;">MENYIAPKAN PANGGUNG REZA...</div>
     </div>
 
+    <video id="webcam" playsinline></video>
     <div id="canvas-container"></div>
     <div class="overlay"><div id="gesture-text"></div></div>
-    <video id="webcam" playsinline></video>
 
     <script>
-        let scene, camera, renderer, particles, starPoints;
+        let scene, camera, renderer, starPoints;
         const pointer = new THREE.Vector3();
         const lerpPointer = new THREE.Vector3();
         let lastGesture = "";
 
-        // 1. INITIALIZE SCENE
         function initScene() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
@@ -59,25 +72,28 @@
             renderer.setPixelRatio(window.devicePixelRatio);
             document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-            // Create Particles
             const geo = new THREE.BufferGeometry();
-            const count = 3000;
+            const count = 4000;
             const pos = new Float32Array(count * 3);
-            for(let i=0; i<count*3; i++) pos[i] = (Math.random()-0.5) * 15;
+            for(let i=0; i<count*3; i++) pos[i] = (Math.random()-0.5) * 18;
             geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
             
-            const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.03, transparent: true, opacity: 0.6 });
+            const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.025, transparent: true, opacity: 0.8 });
             starPoints = new THREE.Points(geo, mat);
             scene.add(starPoints);
         }
 
-        // 2. HAND TRACKING
         async function setupHands() {
             const hands = new Hands({
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
             });
 
-            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+            hands.setOptions({ 
+                maxNumHands: 1, 
+                modelComplexity: 1, 
+                minDetectionConfidence: 0.6, 
+                minTrackingConfidence: 0.6 
+            });
             hands.onResults(onResults);
 
             const videoElement = document.getElementById('webcam');
@@ -89,8 +105,6 @@
             cameraHelper.start().then(() => {
                 document.getElementById('loading-screen').style.opacity = '0';
                 setTimeout(() => document.getElementById('loading-screen').remove(), 1000);
-            }).catch(err => {
-                alert("Kamera diblokir atau tidak ditemukan!");
             });
         }
 
@@ -99,23 +113,33 @@
                 const lm = results.multiHandLandmarks[0];
                 pointer.x = (0.5 - lm[9].x) * 12;
                 pointer.y = (0.5 - lm[9].y) * 8;
-                detect(lm);
-            } else { updateText(""); }
-        }
+                
+                const isFingerUp = [
+                    lm[8].y < lm[6].y,  
+                    lm[12].y < lm[10].y, 
+                    lm[16].y < lm[14].y, 
+                    lm[20].y < lm[18].y  
+                ];
+                const thumbUp = Math.abs(lm[4].x - lm[2].x) > 0.1;
+                const count = isFingerUp.filter(Boolean).length + (thumbUp ? 1 : 0);
 
-        function detect(lm) {
-            const f1 = lm[8].y < lm[6].y;
-            const f2 = lm[12].y < lm[10].y;
-            const f3 = lm[16].y < lm[14].y;
-            const f4 = lm[20].y < lm[18].y;
-            const thumb = lm[4].x < lm[3].x;
-            const count = [f1, f2, f3, f4, thumb].filter(Boolean).length;
-
-            if (count === 5) { updateText("FIREWORKS!"); explode(); }
-            else if (thumb && f1 && !f2 && !f3 && f4) updateText("i love you");
-            else if (count === 1) updateText("halo sayang");
-            else if (count === 2) updateText("love");
-            else updateText("");
+                if (count === 5) {
+                    updateText("🎆 PETASAN! 🎆");
+                    explodeEffect();
+                } else if (count === 4) {
+                    updateText("senang bertemu denganmu");
+                } else if (count === 3) {
+                    updateText("aku reza");
+                } else if (count === 2) {
+                    updateText("perkenalkan");
+                } else if (count === 1) {
+                    updateText("hai");
+                } else {
+                    updateText("");
+                }
+            } else {
+                updateText("");
+            }
         }
 
         function updateText(txt) {
@@ -127,17 +151,22 @@
             }
         }
 
-        function explode() {
-            starPoints.material.color.setHex(Math.random() * 0xffffff);
-            setTimeout(() => starPoints.material.color.setHex(0xffffff), 500);
+        function explodeEffect() {
+            const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+            starPoints.material.color.setHex(colors[Math.floor(Math.random() * colors.length)]);
+            starPoints.scale.set(1.2, 1.2, 1.2);
+            setTimeout(() => {
+                starPoints.material.color.setHex(0xffffff);
+                starPoints.scale.set(1, 1, 1);
+            }, 300);
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            lerpPointer.lerp(pointer, 0.1);
-            starPoints.rotation.y += 0.002;
-            starPoints.position.x = lerpPointer.x * 0.2;
-            starPoints.position.y = lerpPointer.y * 0.2;
+            lerpPointer.lerp(pointer, 0.08);
+            starPoints.rotation.y += 0.001;
+            starPoints.position.x = lerpPointer.x * 0.3;
+            starPoints.position.y = lerpPointer.y * 0.3;
             renderer.render(scene, camera);
         }
 
