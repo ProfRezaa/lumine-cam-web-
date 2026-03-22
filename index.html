@@ -3,271 +3,287 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aura Partikel Reza | Hologram Hand</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500&display=swap" rel="stylesheet">
+    <title>Lumina | Top-Bar Interaction</title>
     
-    <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; color: white; }
-        #canvas-container { position: absolute; inset: 0; z-index: 1; }
-        .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; pointer-events: none; }
-        
-        #gesture-text { 
-            font-size: 3rem; 
-            font-weight: 300; 
-            opacity: 0; 
-            transform: translateY(30px); 
-            transition: all 0.4s ease; 
-            text-shadow: 0 0 25px rgba(0, 255, 255, 0.7); /* Cyan glow default */
-            text-align: center;
+        :root {
+            --apple-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
         }
-        #gesture-text.active { opacity: 1; transform: translateY(0); }
 
-        /* Kamera Samar di Atas Tengah */
-        video { 
-            display: block; 
-            position: absolute; 
-            top: 20px; 
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            font-family: var(--apple-font);
+            color: white;
+        }
+
+        canvas#three-canvas {
+            display: block;
+            position: absolute;
+            top: 0; left: 0;
+            z-index: 1;
+        }
+
+        /* Kamera dipindah ke Atas Tengah */
+        #camera-container {
+            position: fixed;
+            top: 20px;
             left: 50%;
-            transform: translateX(-50%) scaleX(-1); /* Tengah & Mirror */
-            width: 160px; 
-            border-radius: 12px; 
-            border: 1px solid rgba(255,255,255,0.1);
+            transform: translateX(-50%) scale(0.8);
+            width: 200px;
+            height: 150px;
             z-index: 100;
-            opacity: 0.3; /* Samar */
-            transition: opacity 0.3s;
+            border-radius: 20px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            opacity: 0;
+            transition: all 1s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        video:hover { opacity: 1; } /* Muncul saat di-hover mouse */
 
-        #loading-screen { position: fixed; inset: 0; background: #000; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 1s; }
-        .loader { width: 40px; height: 40px; border: 3px solid rgba(0,255,255,0.1); border-top: 3px solid #0ff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
+        #camera-container.active {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
+        }
+
+        #input_video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        #output_canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            transform: scaleX(-1);
+        }
+
+        #ui-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #status-text {
+            font-size: clamp(2rem, 10vw, 4.5rem);
+            font-weight: 600;
+            letter-spacing: -0.03em;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: all 0.5s ease;
+            filter: blur(8px);
+        }
+
+        #status-text.active {
+            opacity: 1;
+            transform: scale(1);
+            filter: blur(0);
+        }
+
+        #loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: #000;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 1s ease;
+        }
+
+        .loader {
+            width: 40px; height: 40px;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-    <div id="loading-screen">
+    <div id="loading-overlay">
         <div class="loader"></div>
-        <div style="letter-spacing: 0.2em; font-size: 0.8rem; color: #0ff;">MEMPROSES JARINGAN AURA...</div>
+        <p style="margin-top: 20px; font-size: 11px; letter-spacing: 2px;">STARTING SYSTEM</p>
     </div>
 
-    <video id="webcam" playsinline></video>
-    <div id="canvas-container"></div>
-    <div class="overlay"><div id="gesture-text"></div></div>
+    <canvas id="three-canvas"></canvas>
+
+    <div id="camera-container">
+        <video id="input_video" playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <div id="ui-layer">
+        <h1 id="status-text"></h1>
+        <p style="position:absolute; bottom:40px; opacity:0.3; font-size:12px; letter-spacing:3px;">PRESENTED BY GEMINI</p>
+    </div>
 
     <script>
-        let scene, camera, renderer, auraParticles;
-        const NUM_PARTICLES = 3000; // Jumlah total partikel (banyak agar terlihat padat)
-        let lastText = "";
-        let currentGlowColor = 0x00ffff; // Cyan default
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const statusText = document.getElementById('status-text');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const camBox = document.getElementById('camera-container');
 
-        // 1. Setup 3D Scene
-        function initScene() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
-            camera.position.set(0, 0, 4);
+        // --- THREE.JS ENGINE ---
+        const scene = new THREE.Scene();
+        const camera3d = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
-            // Tambahkan additive blending untuk efek cahaya premium
-            renderer.toneMapping = THREE.ReinhardToneMapping;
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
+        const composer = new THREE.EffectComposer(renderer);
+        composer.addPass(new THREE.RenderPass(scene, camera3d));
+        const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.4, 0.85);
+        composer.addPass(bloom);
 
-            // BUAT PARTIKEL AURA
-            const geo = new THREE.BufferGeometry();
-            const positions = new Float32Array(NUM_PARTICLES * 3);
-            const sizes = new Float32Array(NUM_PARTICLES); // Ukuran acak
+        // Ambient Particles
+        const count = 3000;
+        const geo = new THREE.BufferGeometry();
+        const posArr = new Float32Array(count * 3);
+        for(let i=0; i<count*3; i++) posArr[i] = (Math.random()-0.5)*20;
+        geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+        const mat = new THREE.PointsMaterial({ size: 0.03, color: 0x4488ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending });
+        const points = new THREE.Points(geo, mat);
+        scene.add(points);
 
-            for(let i=0; i<NUM_PARTICLES; i++) {
-                positions[i*3] = -100; // Mulai jauh dari layar
-                positions[i*3+1] = -100;
-                positions[i*3+2] = -100;
-                sizes[i] = Math.random() * 0.02 + 0.005; // Ukuran bervariasi
+        camera3d.position.z = 6;
+
+        // --- GESTURES ---
+        let currentMsg = "";
+        let handPos = { x: 0, y: 0, active: false };
+
+        function setStatus(txt) {
+            if(currentMsg === txt) return;
+            currentMsg = txt;
+            statusText.classList.remove('active');
+            if(txt) {
+                setTimeout(() => {
+                    statusText.innerText = txt;
+                    statusText.classList.add('active');
+                }, 100);
             }
-            
-            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-            
-            // Material partikel: Bercahaya, Additive Blending
-            const mat = new THREE.PointsMaterial({ 
-                color: currentGlowColor, 
-                size: 0.015, 
-                transparent: true, 
-                opacity: 0.8,
-                blending: THREE.AdditiveBlending, // Membuat partikel tumpuk jadi lebih terang
-                depthWrite: false
-            });
-            auraParticles = new THREE.Points(geo, mat);
-            scene.add(auraParticles);
         }
 
-        // 2. Setup Hand Tracking
-        async function setupHands() {
-            const hands = new Hands({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-            });
+        function triggerBoom(x, y) {
+            const fCount = 60;
+            const fGeo = new THREE.BufferGeometry();
+            const fPos = new Float32Array(fCount * 3);
+            const vels = [];
+            for(let i=0; i<fCount; i++) {
+                fPos[i*3]=x; fPos[i*3+1]=y; fPos[i*3+2]=0;
+                vels.push(new THREE.Vector3((Math.random()-0.5)*0.3, (Math.random()-0.5)*0.3, (Math.random()-0.5)*0.3));
+            }
+            fGeo.setAttribute('position', new THREE.BufferAttribute(fPos, 3));
+            const fMat = new THREE.PointsMaterial({ size: 0.07, color: 0xffaa00, transparent: true, blending: THREE.AdditiveBlending });
+            const fSystem = new THREE.Points(fGeo, fMat);
+            scene.add(fSystem);
 
-            hands.setOptions({ 
-                maxNumHands: 1, 
-                modelComplexity: 1, 
-                minDetectionConfidence: 0.7, // Ditingkatkan agar bentuk lebih stabil
-                minTrackingConfidence: 0.7 
-            });
-            hands.onResults(onResults);
-
-            const videoElement = document.getElementById('webcam');
-            const cameraHelper = new Camera(videoElement, {
-                onFrame: async () => { await hands.send({image: videoElement}); },
-                width: 640, height: 480
-            });
-
-            cameraHelper.start().then(() => {
-                document.getElementById('loading-screen').style.opacity = '0';
-                setTimeout(() => document.getElementById('loading-screen').remove(), 1000);
-            });
+            let opacity = 1.0;
+            function run() {
+                opacity -= 0.025;
+                if(opacity <= 0) { scene.remove(fSystem); return; }
+                fMat.opacity = opacity;
+                const p = fGeo.attributes.position.array;
+                for(let i=0; i<fCount; i++) {
+                    p[i*3]+=vels[i].x; p[i*3+1]+=vels[i].y; p[i*3+2]+=vels[i].z;
+                }
+                fGeo.attributes.position.needsUpdate = true;
+                requestAnimationFrame(run);
+            }
+            run();
         }
 
         function onResults(results) {
-            const posAttr = auraParticles.geometry.attributes.position;
-            const videoWidth = results.image ? results.image.width : 640;
-            const videoHeight = results.image ? results.image.height : 480;
-
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const lm = results.multiHandLandmarks[0];
-                updateAuraParticles(lm, videoWidth, videoHeight);
-                detectGesture(lm);
-            } else {
-                // Sembunyikan partikel jika tidak ada tangan
-                for(let i=0; i<NUM_PARTICLES * 3; i++) {
-                    posAttr.array[i] = -100; // Lempar jauh dari layar
-                }
-                updateText("");
-                changeColor(0x00ffff); // Kembali ke Cyan
+            if (loadingOverlay.style.opacity !== "0") {
+                loadingOverlay.style.opacity = "0";
+                camBox.classList.add('active');
+                setTimeout(() => loadingOverlay.style.display = "none", 1000);
             }
-            posAttr.needsUpdate = true;
-        }
 
-        // LOGIKA UTAMA: MEMBUAT PARTIKEL ACAK DI SEKITAR BENTUK TANGAN
-        function updateAuraParticles(landmarks, w, h) {
-            const positions = auraParticles.geometry.attributes.position.array;
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             
-            // Sendi-sendi utama untuk diikuti aura
-            const keyPoints = [0, 4, 8, 12, 16, 20]; // Pergelangan dan ujung-ujung jari
-            const perPoint = Math.floor(NUM_PARTICLES / keyPoints.length);
-
-            let pIdx = 0;
-            keyPoints.forEach(kpId => {
-                const kp = landmarks[kpId];
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                handPos.active = true;
+                const hand = results.multiHandLandmarks[0];
+                drawConnectors(canvasCtx, hand, HAND_CONNECTIONS, {color: '#ffffff', lineWidth: 1});
                 
-                // Konversi koordinat MediaPipe (0-1) ke Three.js (dunia 3D)
-                const basePos = new THREE.Vector3((0.5 - kp.x) * 4, (0.5 - kp.y) * 3, -kp.z * 2);
+                handPos.x = (hand[9].x - 0.5) * -14;
+                handPos.y = (hand[9].y - 0.5) * -12;
 
-                // Buat titik-titik acak di sekitar basePos (aura)
-                for(let i=0; i<perPoint; i++) {
-                    const angle = Math.random() * Math.PI * 2;
-                    const radius = Math.random() * 0.15; // Jari-jari aura
+                const isUp = (i) => hand[i].y < hand[i-2].y;
+                const count = [isUp(8), isUp(12), isUp(16), isUp(20)].filter(Boolean).length;
 
-                    positions[pIdx++] = basePos.x + Math.cos(angle) * radius;
-                    positions[pIdx++] = basePos.y + Math.sin(angle) * radius;
-                    positions[pIdx++] = basePos.z + (Math.random() - 0.5) * 0.1; // Variasi kedalaman
+                // Gestures
+                if(count >= 4) {
+                    if(currentMsg !== "BOOM") { triggerBoom(handPos.x, handPos.y); setStatus("BOOM!"); setTimeout(()=>setStatus(""), 1000); }
+                } else if(count === 2) {
+                    setStatus("apa kabar");
+                } else if(count === 1) {
+                    setStatus("halo sayang");
+                } else if(hand[4].x > hand[3].x && isUp(8) && isUp(20) && !isUp(12)) {
+                    setStatus("i love you");
                 }
-            });
-
-            // Sisa partikel diisi dengan titik acak di sekitar telapak tangan (Palm)
-            const palmLMs = [0, 1, 5, 9, 13, 17, 0]; // Bentuk telapak
-            while(pIdx < NUM_PARTICLES * 3) {
-                const id1 = palmLMs[Math.floor(Math.random() * palmLMs.length)];
-                const id2 = palmLMs[Math.floor(Math.random() * palmLMs.length)];
-                
-                const lm1 = landmarks[id1];
-                const lm2 = landmarks[id2];
-
-                // Interpolasi acak di antara dua titik telapak
-                const t = Math.random();
-                const interLM = {
-                    x: lm1.x + (lm2.x - lm1.x) * t,
-                    y: lm1.y + (lm2.y - lm1.y) * t,
-                    z: lm1.z + (lm2.z - lm1.z) * t
-                };
-
-                const basePos = new THREE.Vector3((0.5 - interLM.x) * 4, (0.5 - interLM.y) * 3, -interLM.z * 2);
-
-                positions[pIdx++] = basePos.x + (Math.random() - 0.5) * 0.2; // Sedikit acak horizontal
-                positions[pIdx++] = basePos.y + (Math.random() - 0.5) * 0.2; // Sedikit acak vertikal
-                positions[pIdx++] = basePos.z + (Math.random() - 0.5) * 0.1; // Variasi kedalaman
-            }
-        }
-
-        function detectGesture(lm) {
-            const isFingerUp = [
-                lm[8].y < lm[6].y,  
-                lm[12].y < lm[10].y, 
-                lm[16].y < lm[14].y, 
-                lm[20].y < lm[18].y  
-            ];
-            const thumbUp = Math.abs(lm[4].x - lm[2].x) > 0.1;
-            const count = isFingerUp.filter(Boolean).length + (thumbUp ? 1 : 0);
-
-            if (count === 5) {
-                updateText("🎆 HOLOGRAPHIC AURA FIREWORKS! 🎆");
-                changeColor(0xff00ff); // Magenta
-            } else if (count === 4) {
-                updateText("senang bertemu denganmu");
-                changeColor(0x00ff00); // Hijau
-            } else if (count === 3) {
-                updateText("aku reza");
-                changeColor(0xffff00); // Kuning
-            } else if (count === 2) {
-                updateText("perkenalkan");
-                changeColor(0x00ffff); // Cyan
-            } else if (count === 1) {
-                updateText("hai");
-                changeColor(0xffffff); // Putih
             } else {
-                updateText("");
-                changeColor(0x00ffff); // Kembali ke Cyan
+                handPos.active = false;
+                setStatus("");
             }
         }
 
-        function updateText(txt) {
-            const el = document.getElementById('gesture-text');
-            if(lastText !== txt) {
-                lastText = txt;
-                el.innerText = txt;
-                txt === "" ? el.classList.remove('active') : el.classList.add('active');
-            }
-        }
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
 
-        function changeColor(colorHex) {
-            if(auraParticles.material.color.getHex() !== colorHex) {
-                auraParticles.material.color.setHex(colorHex);
-                // Ubah glow text juga agar serasi
-                const rgb = new THREE.Color(colorHex);
-                document.getElementById('gesture-text').style.textShadow = `0 0 25px rgba(${rgb.r*255}, ${rgb.g*255}, ${rgb.b*255}, 0.7)`;
-            }
-        }
+        new Camera(videoElement, {
+            onFrame: async () => await hands.send({image: videoElement}),
+            width: 640, height: 480
+        }).start();
 
-        function animate() {
-            requestAnimationFrame(animate);
-            if(auraParticles) {
-                // Berikan rotasi lambat untuk efek 3D
-                auraParticles.rotation.y += 0.001;
+        function render() {
+            requestAnimationFrame(render);
+            const p = points.geometry.attributes.position.array;
+            for(let i=0; i<count; i++) {
+                if(handPos.active) {
+                    p[i*3] += (handPos.x - p[i*3]) * 0.03 * Math.random();
+                    p[i*3+1] += (handPos.y - p[i*3+1]) * 0.03 * Math.random();
+                } else {
+                    p[i*3] += Math.sin(Date.now()*0.001 + i)*0.005;
+                    p[i*3+1] += Math.cos(Date.now()*0.001 + i)*0.005;
+                }
             }
-            renderer.render(scene, camera);
+            points.geometry.attributes.position.needsUpdate = true;
+            composer.render();
         }
-
-        initScene();
-        setupHands();
-        animate();
+        render();
 
         window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            camera3d.aspect = window.innerWidth / window.innerHeight;
+            camera3d.updateProjectionMatrix();
         });
     </script>
 </body>
